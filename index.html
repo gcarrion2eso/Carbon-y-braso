@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Asador Carbón y Brasa</title>
+    
+    <style>
+        .traductor-gourmet {
+            position: fixed;
+            bottom: 25px;
+            right: 25px;
+            z-index: 999999;
+            background: #111111; 
+            color: white;
+            padding: 10px 15px;
+            border-radius: 25px;
+            box-shadow: 0px 5px 15px rgba(0,0,0,0.5);
+            font-family: sans-serif;
+            font-size: 14px;
+            border: 1px solid #333;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+        .traductor-gourmet:hover {
+            background: #222222;
+            transform: scale(1.05);
+        }
+    </style>
+  <script type="module" crossorigin src="/Carbon-y-brasa/assets/index-ChzlGA47.js"></script>
+  <link rel="stylesheet" crossorigin href="/Carbon-y-brasa/assets/index-D3_vI4uK.css">
+</head>
+<body>
+    
+    <select class="traductor-gourmet" onchange="traducirParaNetlifyUltra(this.value)">
+        <option value="es">🌐 Español</option>
+        <option value="en">English</option>
+        <option value="fr">Français</option>
+        <option value="it">Italiano</option>
+        <option value="de">Deutsch</option>
+    </select>
+
+    <div id="root"></div>
+
+    <!-- TRADUCTOR PROFESIONAL BLINDADO A CERO FALLOS -->
+    <script type="text/javascript">
+        let mapaTextosOriginales = new Map();
+        let cacheTraducciones = {}; 
+        let observadorReact = null;
+        let controladorAbortar = null; 
+        let idiomaActual = 'es';
+
+        function escanearTextos(limpiarTodo = false) {
+            const contenedor = document.getElementById('root');
+            if (!contenedor) return;
+            
+            if (limpiarTodo) {
+                mapaTextosOriginales.clear();
+            }
+            
+            const caminarNodos = document.createTreeWalker(
+                contenedor,
+                NodeFilter.SHOW_TEXT,
+                null,
+                false
+            );
+
+            let nodoTextual;
+            while (nodoTextual = caminarNodos.nextNode()) {
+                const textoLimpio = nodoTextual.nodeValue.trim();
+                // Validamos que sea texto real y que no esté ya mapeado con otro valor
+                if (textoLimpio.length > 1 && isNaN(textoLimpio)) {
+                    if (idiomaActual === 'es' && !mapaTextosOriginales.has(nodoTextual)) {
+                        mapaTextosOriginales.set(nodoTextual, textoLimpio);
+                    }
+                }
+            }
+        }
+
+        async function traducirFrase(texto, idioma, senal) {
+            if (cacheTraducciones[idioma] && cacheTraducciones[idioma][texto]) {
+                return cacheTraducciones[idioma][texto];
+            }
+
+            try {
+                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=es&tl=${idioma}&dt=t&q=${encodeURIComponent(texto)}`;
+                const respuesta = await fetch(url, { signal: senal });
+                const resultado = await respuesta.json();
+                if (resultado && resultado[0] && resultado[0][0]) {
+                    const textoTraducido = resultado[0].map(p => p[0]).join('');
+                    
+                    if (!cacheTraducciones[idioma]) cacheTraducciones[idioma] = {};
+                    cacheTraducciones[idioma][texto] = textoTraducido;
+                    
+                    return textoTraducido;
+                }
+            } catch (e) {
+                if (e.name !== 'AbortError') console.error("Error en frase:", e);
+            }
+            return texto;
+        }
+
+        async function traducirParaNetlifyUltra(idiomaDestino) {
+            // Cancelar procesos en ejecución inmediatos
+            if (controladorAbortar) controladorAbortar.abort();
+            controladorAbortar = new AbortController();
+            const senal = controladorAbortar.signal;
+
+            // Pausar el observador para evitar bucles con las mutaciones de traducción
+            if (observadorReact) observadorReact.disconnect();
+
+            // Si estábamos en español, nos aseguramos de tener el mapa limpio y fresco
+            if (idiomaActual === 'es') {
+                escanearTextos(false);
+            }
+
+            if (idiomaDestino === 'es') {
+                mapaTextosOriginales.forEach((textoOriginal, nodo) => {
+                    if (document.contains(nodo)) {
+                        nodo.nodeValue = textoOriginal;
+                    }
+                });
+                idiomaActual = 'es';
+                reencenderObservador();
+                return;
+            }
+
+            idiomaActual = idiomaDestino;
+            const nodosArray = Array.from(mapaTextosOriginales.keys()).filter(nodo => document.contains(nodo));
+            
+            const promesas = nodosArray.map(async (nodo) => {
+                const textoOriginal = mapaTextosOriginales.get(nodo);
+                const traducido = await traducirFrase(textoOriginal, idiomaDestino, senal);
+                if (traducido && !senal.aborted && document.contains(nodo)) {
+                    nodo.nodeValue = traducido;
+                }
+            });
+
+            try {
+                await Promise.all(promesas);
+            } catch (error) {
+                // Captura silenciosa de abortos de usuario
+            }
+
+            reencenderObservador();
+        }
+
+        function reencenderObservador() {
+            const contenedorRoot = document.getElementById('root');
+            if (contenedorRoot && observadorReact) {
+                observadorReact.observe(contenedorRoot, { childList: true, subtree: true, characterData: false });
+            }
+        }
+
+        // Inicialización controlada del entorno React/Vite
+        setTimeout(() => {
+            const contenedorRoot = document.getElementById('root');
+            if (contenedorRoot) {
+                observadorReact = new MutationObserver((mutaciones) => {
+                    // Evitamos reaccionar si las mutaciones vienen de nuestro propio traductor
+                    const selector = document.querySelector('.traductor-gourmet');
+                    if (selector && selector.value !== 'es') {
+                        // Comprobamos si React ha añadido nodos nuevos reales a la pantalla
+                        let cambiosReales = false;
+                        for (let mutacion of mutaciones) {
+                            if (mutacion.addedNodes.length > 0) {
+                                cambiosReales = true;
+                                break;
+                            }
+                        }
+                        if (cambiosReales) {
+                            escanearTextos(false);
+                            traducirParaNetlifyUltra(selector.value);
+                        }
+                    }
+                });
+                escanearTextos(true);
+                reencenderObservador();
+            }
+        }, 1500);
+    </script>
+
+</body>
+</html>
+
